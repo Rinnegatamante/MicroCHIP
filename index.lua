@@ -14,13 +14,26 @@ local updateScreen = false
 local beep = nil
 local cur_rom = ""
 
+-- Custom colors
+local bg_r = 0
+local bg_g = 0
+local bg_b = 0
+local nbg_r = 255
+local nbg_g = 255
+local nbg_b = 255
+
 -- Colors
-white = Color.new(255, 255, 255)
-black = Color.new(0, 0, 0)
-cyan = Color.new(0, 162, 232)
-yellow = Color.new(255, 255, 0)
-bg_color = black
-non_bg_color = white
+local white = Color.new(255, 255, 255)
+local black = Color.new(0, 0, 0)
+local cyan = Color.new(0, 162, 232)
+local yellow = Color.new(255, 255, 0)
+local red = Color.new(255, 0, 0)
+local green = Color.new(0, 255, 0)
+local blue = Color.new(0, 0, 255)
+local bg_color = Color.new(bg_r, bg_g, bg_b)
+local nbg_color = Color.new(nbg_r, nbg_g, nbg_b)
+local old_bg_color = bg_color
+local old_nbg_color = nbg_color
 
 -- Key Mapping
 local keys = {
@@ -40,6 +53,7 @@ local keys = {
 
 -- Emulator State
 local state = 0
+local old_state = 0
 local romFolder = "ux0:data/MicroCHIP/roms"
 local savFolder = "ux0:data/MicroCHIP/saves"
 local roms = {}
@@ -169,7 +183,7 @@ function drawScreen()
 				if screen[bit32.lshift(y,6) + x] == 0 then
 					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
 				else
-					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, non_bg_color)
+					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
 				end
 			end
 		end
@@ -515,7 +529,7 @@ function handleRomSelection()
 		end
 		loadRom(romFolder.."/"..roms[cursor])
 		if loadState then
-			loadSavestate(savFolder.."/"..roms[cursor]..".sav")
+			loadSavestate()
 		end
 		state = 1
 	end
@@ -523,7 +537,7 @@ function handleRomSelection()
 end
 
 -- Load a savestate
-function loadSavestate(filename)
+function loadSavestate()
 	local fd = System.openFile(savFolder.."/"..cur_rom..".sav", FREAD)
 	PC_b1 = string.byte(System.readFile(fd,1))
 	PC_b2 = string.byte(System.readFile(fd,1))
@@ -595,7 +609,6 @@ function handlePauseKeys()
 	end
 	old_t = t
 	pad = Controls.read()
-	pad = Controls.read()
 	if Controls.check(pad, SCE_CTRL_UP) and not Controls.check(oldpad, SCE_CTRL_UP) then
 		cursor = cursor - 1
 		if cursor < 1 then
@@ -617,7 +630,11 @@ function handlePauseKeys()
 			loadSavestate()
 			pushNotification("Savestate loaded successfully!")
 		elseif cursor == 4 then -- Options
-			-- TODO
+			state = 3
+			cursor = 1
+			old_state = 2
+			old_bg_color = bg_color
+			old_nbg_color = nbg_color
 		elseif cursor == 5 then -- Close rom
 			state = 0
 			cursor = 1
@@ -639,10 +656,190 @@ function drawPauseMenu()
 	end
 end
 
+-- Save options config
+function saveConfig()
+	if System.doesFileExist("ux0:data/MicroCHIP/options.cfg") then
+		System.deleteFile("ux0:data/MicroCHIP/options.cfg")
+	end
+	local fd = System.openFile("ux0:data/MicroCHIP/options.cfg", FCREATE)
+	System.writeFile(fd, string.char(bg_r), 1)
+	System.writeFile(fd, string.char(bg_g), 1)
+	System.writeFile(fd, string.char(bg_b), 1)
+	System.writeFile(fd, string.char(nbg_r), 1)
+	System.writeFile(fd, string.char(nbg_g), 1)
+	System.writeFile(fd, string.char(nbg_b), 1)
+	System.closeFile(fd)
+end
+
+-- Save options config
+function loadConfig()
+	if System.doesFileExist("ux0:data/MicroCHIP/options.cfg") then
+		local fd = System.openFile("ux0:data/MicroCHIP/options.cfg", FREAD)
+		bg_r = string.byte(System.readFile(fd, 1))
+		bg_g = string.byte(System.readFile(fd, 1))
+		bg_b = string.byte(System.readFile(fd, 1))
+		nbg_r = string.byte(System.readFile(fd, 1))
+		nbg_g = string.byte(System.readFile(fd, 1))
+		nbg_b = string.byte(System.readFile(fd, 1))
+		System.closeFile(fd)
+		bg_color = Color.new(bg_r, bg_g, bg_b)
+		nbg_color = Color.new(nbg_r, nbg_g, nbg_b)
+	end
+end
+
+-- Draw options menu
+function drawOptionsMenu()
+	Screen.clear()
+	
+	-- Background color tab	
+	Graphics.fillRect(20, 940, 50, 220, white)
+	Graphics.fillRect(21, 939, 51, 219, black)
+	Graphics.fillRect(40, 80, 140, 180, white)
+	Graphics.fillRect(41, 79, 141, 179, bg_color)
+	if cursor > 0 and cursor < 4 then
+		Graphics.fillRect(99, 867, 104 + (cursor - 1) * 40, 126 + (cursor - 1) * 40, cyan)
+	end
+	Graphics.fillRect(100, 101 + 3 * bg_r, 105, 125, red)
+	Graphics.fillRect(100, 101 + 3 * bg_g, 145, 165, green)
+	Graphics.fillRect(100, 101 + 3 * bg_b, 185, 205, blue)
+	Graphics.debugPrint(40, 65, "Background color", white)
+	
+	-- Non background color tab
+	Graphics.fillRect(20, 940, 240, 410, white)
+	Graphics.fillRect(21, 939, 241, 409, black)
+	Graphics.fillRect(40, 80, 330, 370, white)
+	Graphics.fillRect(41, 79, 331, 369, nbg_color)
+	if cursor > 3 and cursor < 7 then
+		Graphics.fillRect(99, 867, 294 + (cursor - 4) * 40, 316 + (cursor - 4) * 40, cyan)
+	end
+	Graphics.fillRect(100, 101 + 3 * nbg_r, 295, 315, red)
+	Graphics.fillRect(100, 101 + 3 * nbg_g, 335, 355, green)
+	Graphics.fillRect(100, 101 + 3 * nbg_b, 375, 395, blue)
+	Graphics.debugPrint(40, 255, "Sprites color", white)
+	
+	-- Menu entries
+	if cursor == 7 then
+		Graphics.debugPrint(20, 450, "Save changes", cyan)
+	else
+		Graphics.debugPrint(20, 450, "Save changes", white)
+	end
+	if cursor == 8 then
+		Graphics.debugPrint(20, 470, "Discard changes", cyan)
+	else
+		Graphics.debugPrint(20, 470, "Discard changes", white)
+	end
+	
+end
+
+function handleOptionsKeys()
+	pad = Controls.read()
+	if Controls.check(pad, SCE_CTRL_UP) and not Controls.check(oldpad, SCE_CTRL_UP) then
+		cursor = cursor - 1
+		if cursor < 1 then
+			cursor = 8
+		end
+	elseif Controls.check(pad, SCE_CTRL_DOWN) and not Controls.check(oldpad, SCE_CTRL_DOWN) then
+		cursor = cursor + 1
+		if cursor > 8 then
+			cursor = 1
+		end
+	elseif Controls.check(pad, SCE_CTRL_CROSS) and not Controls.check(oldpad, SCE_CTRL_CROSS) then
+		if cursor == 7 then
+			state = old_state
+			cursor = 1
+			saveConfig()
+		elseif cursor == 8 then
+			state = old_state
+			cursor = 1
+			bg_color = old_bg_color
+			nbg_color = old_nbg_color
+			bg_r = Color.getR(bg_color)
+			bg_g = Color.getG(bg_color)
+			bg_b = Color.getB(bg_color)
+			nbg_r = Color.getR(nbg_color)
+			nbg_g = Color.getG(nbg_color)
+			nbg_b = Color.getB(nbg_color)
+		end
+		if state == 1 then
+			cursor = 4
+		end
+	elseif Controls.check(pad, SCE_CTRL_LEFT) then
+		if cursor == 1 then
+			bg_r = bg_r - 1
+			if bg_r < 0 then
+				bg_r = 0
+			end
+		elseif cursor == 2 then
+			bg_g = bg_g - 1
+			if bg_g < 0 then
+				bg_g = 0
+			end
+		elseif cursor == 3 then
+			bg_b = bg_b - 1
+			if bg_b < 0 then
+				bg_b = 0
+			end
+		elseif cursor == 4 then
+			nbg_r = nbg_r - 1
+			if nbg_r < 0 then
+				nbg_r = 0
+			end
+		elseif cursor == 5 then
+			nbg_g = nbg_g - 1
+			if nbg_g < 0 then
+				nbg_g = 0
+			end
+		elseif cursor == 6 then
+			nbg_b = nbg_b - 1
+			if nbg_b < 0 then
+				nbg_b = 0
+			end
+		end
+		bg_color = Color.new(bg_r, bg_g, bg_b)
+		nbg_color = Color.new(nbg_r, nbg_g, nbg_b)
+	elseif Controls.check(pad, SCE_CTRL_RIGHT) then
+		if cursor == 1 then
+			bg_r = bg_r + 1
+			if bg_r > 255 then
+				bg_r = 255
+			end
+		elseif cursor == 2 then
+			bg_g = bg_g + 1
+			if bg_g > 255 then
+				bg_g = 255
+			end
+		elseif cursor == 3 then
+			bg_b = bg_b + 1
+			if bg_b > 255 then
+				bg_b = 255
+			end
+		elseif cursor == 4 then
+			nbg_r = nbg_r + 1
+			if nbg_r > 255 then
+				nbg_r = 255
+			end
+		elseif cursor == 5 then
+			nbg_g = nbg_g + 1
+			if nbg_g > 255 then
+				nbg_g = 255
+			end
+		elseif cursor == 6 then
+			nbg_b = nbg_b + 1
+			if nbg_b > 255 then
+				nbg_b = 255
+			end
+		end
+		bg_color = Color.new(bg_r, bg_g, bg_b)
+		nbg_color = Color.new(nbg_r, nbg_g, nbg_b)
+	end
+	oldpad = pad
+end
+
 -- Initializing emulator
 Sound.init()
 beep = Sound.open("app0:beep.ogg")
 getRomList()
+loadConfig()
 
 -- Main loop
 while true do
@@ -667,6 +864,7 @@ while true do
 		handleKeys()
 	elseif state == 2 then -- Pause menu
 		Graphics.initBlend()
+		updateScreen = true
 		drawScreen()
 		Graphics.fillRect(0, 960, 0, 32, black)
 		if state_timer > 0 then
@@ -677,6 +875,12 @@ while true do
 		Graphics.termBlend()
 		Screen.flip()
 		handlePauseKeys()
+	elseif state == 3 then -- Options Menu
+		Graphics.initBlend()
+		drawOptionsMenu()
+		Graphics.termBlend()
+		Screen.flip()
+		handleOptionsKeys()
 	end
 	
 end
