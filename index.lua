@@ -6,13 +6,16 @@ local I = 0x000
 local PC = 0x000
 local SP = 0
 local screen = {} -- 64x32 -> 960x480 (x15)
+local super_screen = {} -- 128x64 -> 896x448 (x7)
 local delay_timer = 0
 local sound_timer = 0
 local stack = {}
+local hp48_flags = {}
 local key = {}
 local updateScreen = false
 local beep = nil
 local cur_rom = ""
+local schip_mode = false
 
 -- Custom colors
 local bg_r = 0
@@ -86,10 +89,38 @@ local fontset = {
 	0xF0, 0x80, 0xF0, 0x80, 0x80  -- F
 }
 
+-- SCHIP-8 Fontset
+local super_fontset = {
+	0xFF, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF,	-- 0
+	0x18, 0x78, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0xFF, 0xFF,	-- 1
+	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF,	-- 2
+	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 3
+	0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0x03, 0x03, -- 4
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 5
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF,	-- 6
+	0xFF, 0xFF, 0x03, 0x03, 0x06, 0x0C, 0x18, 0x18, 0x18, 0x18, -- 7
+	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF,	-- 8
+	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 9
+	0x7E, 0xFF, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xC3, -- A
+	0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, -- B
+	0x3C, 0xFF, 0xC3, 0xC0, 0xC0, 0xC0, 0xC0, 0xC3, 0xFF, 0x3C, -- C
+	0xFC, 0xFE, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFE, 0xFC, -- D
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, -- E
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xC0, 0xC0  -- F
+}
+
 -- Clear CHIP-8 screen
 function clearScreen()
 	for i=0, 0x800 do
 		screen[i] = 0
+	end
+	updateScreen = true
+end
+
+-- Clear SCHIP-8 screen
+function clearSuperScreen()
+	for i=0, 0x2000 do
+		super_screen[i] = 0
 	end
 	updateScreen = true
 end
@@ -108,11 +139,13 @@ function initEmu()
 	opcode = 0
 	I = 0x000
 	SP = 0
+	schip_mode = false
 	
 	-- Clearing screen
 	clearScreen()
+	clearSuperScreen()
 	
-	-- Resetting stack, keystates, registers and ram
+	-- Resetting stack, keystates, registers, HP48 flags and ram
 	for i=0, 15 do
 		stack[i] = 0
 		V[i] = 0
@@ -121,14 +154,22 @@ function initEmu()
 	for i=0, 0xFFF do
 		ram[i] = 0
 	end
+	for i=0, 7 do
+		hp48_flags[i] = 0
+	end
 	
 	-- Reset timers
 	delay_timer = 0
 	sound_timer = 0
 	
-	-- Loading fontset
+	-- Loading CHIP-8 fontset
 	for i=0, 0x4F do
 		ram[i] = fontset[i+1]
+	end
+	
+	-- Loading SCHIP-8 fontset
+	for i=0, 0x9F do
+		ram[i + 0x50] = super_fontset[i+1]
 	end
 	
 	-- Selecting a seed for random purposes
@@ -171,14 +212,28 @@ end
 
 -- Draw CHIP-8 display on screen
 function drawScreen()
-	for y=0, 31 do
-		for x=0, 63 do
-			x_val = x * 15
-			y_val = (y * 15) + 32
-			if screen[bit32.lshift(y,6) + x] == 0 then
-				Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
-			else
-				Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
+	if schip_mode then
+		for y=0, 63 do
+			for x=0, 127 do
+				x_val = x * 7
+				y_val = (y * 7) + 48
+				if super_screen[bit32.lshift(y,6) + x] == 0 then
+					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, bg_color)
+				else
+					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, nbg_color)
+				end
+			end
+		end
+	else
+		for y=0, 31 do
+			for x=0, 63 do
+				x_val = x * 15
+				y_val = (y * 15) + 32
+				if screen[bit32.lshift(y,6) + x] == 0 then
+					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
+				else
+					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
+				end
 			end
 		end
 	end
@@ -254,46 +309,88 @@ function executeOpcode()
 	-- Executing opcode
 	PC = PC + 2
 	if bit1 == 0x0 then
-		if bit4 == 0x0 then -- CLS
-			clearScreen()
-		elseif bit4 == 0xE then -- RET
+		if bit3 == 0xC then -- SCD nibble *SCHIP*
+			for y=0, 63 do
+				for x=0, 127 do
+					local yline = bit32.lshift(y , 7)
+					super_screen[x + bit32.lshift(y + bit4,7)] = super_screen[x + yline]
+					if y < bit4 then
+						super_screen[x + yline] = 0
+					end
+				end
+			end
+		elseif bit3 == 0xE and bit4 == 0x0 then -- CLS
+			if schip_mode then
+				clearSuperScreen()
+			else
+				clearScreen()
+			end
+		elseif bit3 == 0xE and bit4 == 0xE then -- RET
 			SP = SP - 1
 			PC = stack[SP]
+		elseif bit3 == 0xF and bit4 == 0xB then -- SCR *SCHIP*
+			for y=0, 63 do
+				local yline = bit32.lshift(y , 7)
+				for x=4, 127 do
+					super_screen[x + yline] = super_screen[x + yline - 4]
+				end
+				super_screen[yline] = 0
+				super_screen[yline+1] = 0
+				super_screen[yline+2] = 0
+				super_screen[yline+3] = 0
+			end
+		elseif bit3 == 0xF and bit4 == 0xC then -- SCL *SCHIP*
+			for y=0, 63 do
+				local yline = bit32.lshift(y , 7)
+				for x=0, 123 do	
+					super_screen[x + yline] = super_screen[x + yline + 4]
+				end
+				super_screen[yline+124] = 0
+				super_screen[yline+125] = 0
+				super_screen[yline+126] = 0
+				super_screen[yline+127] = 0
+			end
+		elseif bit3 == 0xF and bit4 == 0xD then -- EXIT
+			state = 0
+		elseif bit3 == 0xF and bit4 == 0xE then -- LOW *SCHIP*
+			schip_mode = false
+		elseif bit3 == 0xF and bit4 == 0xF then -- HIGH *SCHIP*
+			schip_mode = true
 		else
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
-	elseif bit1 == 0x1 then -- JP
+	elseif bit1 == 0x1 then -- JP addr
 		PC = bit32.band(opcode,0x0FFF)
-	elseif bit1 == 0x2 then -- CALL
+	elseif bit1 == 0x2 then -- CALL addr
 		stack[SP] = PC
 		SP = SP + 1
 		PC = bit32.band(opcode,0x0FFF)
-	elseif bit1 == 0x3 then -- SE
+	elseif bit1 == 0x3 then -- SE Vx, byte
 		if V[bit2] == bit32.band(opcode, 0x00FF) then
 			PC = PC + 2
 		end
-	elseif bit1 == 0x4 then -- SNE
+	elseif bit1 == 0x4 then -- SNE Vx, byte
 		if V[bit2] ~= bit32.band(opcode, 0x00FF) then
 			PC = PC + 2
 		end
-	elseif bit1 == 0x5 then -- SE
+	elseif bit1 == 0x5 then -- SE Vx, Vy
 		if V[bit2] == V[bit3] then
 			PC = PC + 2
 		end
-	elseif bit1 == 0x6 then -- LD
+	elseif bit1 == 0x6 then -- LD Vx, byte
 		V[bit2] = bit32.band(opcode, 0x00FF)
-	elseif bit1 == 0x7 then -- ADD
+	elseif bit1 == 0x7 then -- ADD Vx, byte
 		V[bit2] = bit32.band(V[bit2] + bit32.band(opcode, 0x00FF), 0x00FF)
 	elseif bit1 == 0x8 then
-		if bit4 == 0x0 then -- LD
+		if bit4 == 0x0 then -- LD Vx, Vy
 			V[bit2] = V[bit3]
-		elseif bit4 == 0x1 then -- OR
-			V[bit2] = bit32.band(bit32.bor(V[bit2],V[bit3]),0x00FF)
-		elseif bit4 == 0x2 then -- AND
+		elseif bit4 == 0x1 then -- OR Vx, Vy
+			V[bit2] = bit32.bor(V[bit2],V[bit3])
+		elseif bit4 == 0x2 then -- AND Vx, Vy
 			V[bit2] = bit32.band(V[bit2],V[bit3])
-		elseif bit4 == 0x3 then -- XOR
-			V[bit2] = bit32.band(bit32.bxor(V[bit2],V[bit3]),0x00FF)
-		elseif bit4 == 0x4 then -- ADD
+		elseif bit4 == 0x3 then -- XOR Vx, Vy
+			V[bit2] = bit32.bxor(V[bit2],V[bit3])
+		elseif bit4 == 0x4 then -- ADD Vx, Vy
 			V[bit2] = V[bit2] + V[bit3]
 			if V[bit2] > 0xFF then
 				V[0xF] = 1
@@ -301,7 +398,7 @@ function executeOpcode()
 			else
 				V[0xF] = 0
 			end
-		elseif bit4 == 0x5 then -- SUB
+		elseif bit4 == 0x5 then -- SUB Vx, Vy
 			V[bit2] = V[bit2] - V[bit3]
 			if V[bit2] > 0 then
 				V[0xF] = 1
@@ -309,10 +406,10 @@ function executeOpcode()
 				V[0xF] = 0
 				V[bit2] = bit32.band(V[bit2], 0x00FF)
 			end
-		elseif bit4 == 0x6 then -- SHR
-			V[0xF] = bit32.band(V[bit3],1)
-			V[bit2] = bit32.rshift(V[bit3],1)
-		elseif bit4 == 0x7 then -- SUBN
+		elseif bit4 == 0x6 then -- SHR Vx
+			V[0xF] = bit32.band(V[bit2],1)
+			V[bit2] = bit32.rshift(V[bit2],1)
+		elseif bit4 == 0x7 then -- SUBN Vx, Vy
 			V[bit2] = V[bit3] - V[bit2]
 			if V[bit2] > 0 then
 				V[0xF] = 1
@@ -320,50 +417,102 @@ function executeOpcode()
 				V[0xF] = 0
 				V[bit2] = bit32.band(V[bit2], 0x00FF)
 			end
-		elseif bit4 == 0xE then -- SHL
-			V[0xF] = bit32.band(bit32.rshift(V[bit3],7),1)
-			V[bit2] = bit32.band(bit32.lshift(V[bit3],1), 0x00FF)
+		elseif bit4 == 0xE then -- SHL Vx
+			if bit32.band(V[bit2], 0x80) == 0x80 then
+				V[0xF] = 1
+			else
+				V[0xF] = 0
+			end
+			V[bit2] = bit32.band(bit32.lshift(V[bit2],1), 0x00FF)
 		else
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
-	elseif bit1 == 0x9 then -- SNE
+	elseif bit1 == 0x9 then -- SNE Vx, Vy
 		if V[bit2] ~= V[bit3] then
 			PC = PC + 2
 		end
-	elseif bit1 == 0xA then -- LD I
+	elseif bit1 == 0xA then -- LD I, addr
 		I = bit32.band(opcode,0x0FFF)
-	elseif bit1 == 0xB then -- JP V0
+	elseif bit1 == 0xB then -- JP V0, addr
 		PC = V[0] + bit32.band(opcode, 0x0FFF)
-	elseif bit1 == 0xC then -- RND
-		V[bit2] = bit32.band(math.random() % 0x100, bit32.band(opcode, 0x00FF))
-	elseif bit1 == 0xD then -- DRW
+	elseif bit1 == 0xC then -- RND Vx, byte
+		V[bit2] = bit32.band(math.random(0, 0xFF), bit32.band(opcode, 0x00FF))
+	elseif bit1 == 0xD then -- DRW Vx, Vy, nibble
 		local x = V[bit2]
 		local y = V[bit3]
 		local h = bit4
+		local pixel
 		V[0xF] = 0
-		for yline=0, h-1 do
-			local y_idx = (y + yline) % 32
-			pixel = ram[I + yline]
-			for xline=0, 7 do
-				local x_idx = (x + xline) % 64
-				if ((bit32.band(pixel,bit32.rshift(0x80, xline))) ~= 0) then
-					pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
-					if screen[pixel_idx] == 1 then
-						V[0xF] = 1
-						screen[pixel_idx] = 0
-					else
-						screen[pixel_idx] = 1
+		if schip_mode then
+			if h == 0 then
+				for yline=0, 15 do
+					local y_idx = (y + yline) % 64
+					local y_pixel = bit32.lshift(yline,1)
+					pixel = ram[I + y_pixel]
+					for xline=0, 7 do
+						local x_idx = (x + xline) % 128
+						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							if super_screen[pixel_idx] == 1 then
+								V[0xF] = 1
+							end
+							super_screen[pixel_idx] = bit32.bxor(super_screen[pixel_idx],1)
+						end
+					end
+					pixel = ram[I + y_pixel]
+					for xline=8, 15 do
+						local x_idx = (x + xline) % 128
+						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							if super_screen[pixel_idx] == 1 then
+								V[0xF] = 1
+							end
+							super_screen[pixel_idx] = bit32.bxor(super_screen[pixel_idx],1)
+						end
+					end
+				end
+			else
+				for yline=0, h-1 do
+					local y_idx = (y + yline) % 64
+					pixel = ram[I + yline]
+					for xline=0, 7 do
+						local x_idx = (x + xline) % 128
+						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							if super_screen[pixel_idx] == 1 then
+								V[0xF] = 1
+							end
+							super_screen[pixel_idx] = bit32.bxor(super_screen[pixel_idx],1)
+						end
+					end
+				end
+			end
+		else
+			if h == 0 then
+				h = 16
+			end
+			for yline=0, h-1 do
+				local y_idx = (y + yline) % 32
+				pixel = ram[I + yline]
+				for xline=0, 7 do
+					local x_idx = (x + xline) % 64
+					if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
+						pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+						if screen[pixel_idx] == 1 then
+							V[0xF] = 1
+						end
+						screen[pixel_idx] = bit32.bxor(screen[pixel_idx],1)
 					end
 				end
 			end
 		end
 		updateScreen = true
 	elseif bit1 == 0xE then
-		if bit3 == 0x9 and bit4 == 0xE then -- SKP
+		if bit3 == 0x9 and bit4 == 0xE then -- SKP Vx
 			if key[V[bit2]] then
 				PC = PC + 2
 			end
-		elseif bit3 == 0xA and bit4 == 0x1 then -- SKNP
+		elseif bit3 == 0xA and bit4 == 0x1 then -- SKPN Vx
 			if not key[V[bit2]] then
 				PC = PC + 2
 			end
@@ -371,9 +520,9 @@ function executeOpcode()
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
 	elseif bit1 == 0xF then
-		if bit3 == 0x0 and bit4 == 0x7 then -- LD DT
+		if bit3 == 0x0 and bit4 == 0x7 then -- LD Vx, DT
 			V[bit2] = delay_timer
-		elseif bit3 == 0x0 and bit4 == 0xA then -- LD KEY
+		elseif bit3 == 0x0 and bit4 == 0xA then -- LD Vx, K
 			keyPress = false
 			for key_idx=0, 15 do
 				if key[key_idx] then
@@ -385,30 +534,39 @@ function executeOpcode()
 			if not keyPress then
 				PC = PC - 2
 			end
-		elseif bit3 == 0x1 and bit4 == 0x5 then -- LD DT (set)
+		elseif bit3 == 0x1 and bit4 == 0x5 then -- LD DT, Vx
 			delay_timer = V[bit2]
-		elseif bit3 == 0x1 and bit4 == 0x8 then -- LD ST (set)
+		elseif bit3 == 0x1 and bit4 == 0x8 then -- LD ST, Vx
 			sound_timer = V[bit2]
-		elseif bit3 == 0x1 and bit4 == 0xE then -- ADD I
+		elseif bit3 == 0x1 and bit4 == 0xE then -- ADD I, Vx
 			I = I + V[bit2]
-		elseif bit3 == 0x2 and bit4 == 0x9 then -- LD sprite
+		elseif bit3 == 0x2 and bit4 == 0x9 then -- LD F, Vx
 			I = V[bit2] * 5
-		elseif bit3 == 0x3 and bit4 == 0x3 then -- LD BCD
+		elseif bit3 == 0x3 and bit4 == 0x0 then -- LD LF, Vx *SCHIP*
+			I = V[bit2] * 10 + 0x50
+		elseif bit3 == 0x3 and bit4 == 0x3 then -- LD B, Vx
 			local n = V[bit2]
 			ram[I] = math.floor(n / 100) % 10
 			ram[I + 1] = math.floor(n / 10) % 10
 			ram[I + 2] = n % 10
-		elseif bit3 == 0x5 and bit4 == 0x5 then -- LD mpoke
+		elseif bit3 == 0x5 and bit4 == 0x5 then -- LD [I], Vx
 			for i=0, bit2 do
 				ram[I + i] = V[i]
 			end
 			I = bit32.band(I + bit2 + 1, 0xFFFF)
-		elseif bit3 == 0x6 and bit4 == 0x5 then -- LD mpeek
+		elseif bit3 == 0x6 and bit4 == 0x5 then -- LD Vx, [I]
 			for i=0, bit2 do
-				V[I] = ram[I + i]
-				i = i + 1
+				V[i] = ram[I + i]
 			end
 			I = bit32.band(I + bit2 + 1, 0xFFFF)
+		elseif bit3 == 0x7 and bit4 == 0x5 then -- LD R, Vx *SCHIP*
+			for i=0, bit2 do
+				hp48_flags[i] = V[i]
+			end
+		elseif bit3 == 0x8 and bit4 == 0x5 then -- LD Vx, R *SCHIP*
+			for i=0, bit2 do
+				V[i] = hp48_flags[i]
+			end
 		else
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
