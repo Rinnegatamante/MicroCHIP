@@ -63,7 +63,8 @@ local oldpad = SCE_CTRL_CROSS
 local notification = ""
 local t = nil
 local old_t = nil
-local pause_menu_entries = {"Resume game", "Save savestate", "Load savestate", "Options", "Close rom"}
+local pause_menu_entries = {"Resume game", "Save savestate", "Load savestate", "Show/Hide Debugger", "Options", "Close rom"}
+local debugger = false
 
 -- CHIP-8 Fontset
 local fontset = {
@@ -268,13 +269,11 @@ function executeOpcode()
 		SP = SP + 1
 		PC = bit32.band(opcode,0x0FFF)
 	elseif bit1 == 0x3 then -- SE
-		val = bit32.band(opcode, 0x00FF)
-		if V[bit2] == val then
+		if V[bit2] == bit32.band(opcode, 0x00FF) then
 			PC = PC + 2
 		end
 	elseif bit1 == 0x4 then -- SNE
-		val = bit32.band(opcode, 0x00FF)
-		if V[bit2] ~= val then
+		if V[bit2] ~= bit32.band(opcode, 0x00FF) then
 			PC = PC + 2
 		end
 	elseif bit1 == 0x5 then -- SE
@@ -303,12 +302,13 @@ function executeOpcode()
 				V[0xF] = 0
 			end
 		elseif bit4 == 0x5 then -- SUB
-			if V[bit3] > V[bit2] then
-				V[0xF] = 0
-			else
-				V[0xF] = 1
-			end
 			V[bit2] = V[bit2] - V[bit3]
+			if V[bit2] > 0 then
+				V[0xF] = 1
+			else
+				V[0xF] = 0
+				V[bit2] = bit32.band(V[bit2], 0x00FF)
+			end
 		elseif bit4 == 0x6 then -- SHR
 			V[0xF] = bit32.band(V[bit3],1)
 			V[bit2] = bit32.rshift(V[bit3],1)
@@ -322,7 +322,7 @@ function executeOpcode()
 			end
 		elseif bit4 == 0xE then -- SHL
 			V[0xF] = bit32.band(bit32.rshift(V[bit3],7),1)
-			V[bit2] = bit32.lshift(V[bit3],1)
+			V[bit2] = bit32.band(bit32.lshift(V[bit3],1), 0x00FF)
 		else
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
@@ -395,20 +395,20 @@ function executeOpcode()
 			I = V[bit2] * 5
 		elseif bit3 == 0x3 and bit4 == 0x3 then -- LD BCD
 			local n = V[bit2]
-			ram[I] = (n / 100) % 10
-			ram[I + 1] = (n / 10) % 10
+			ram[I] = math.floor(n / 100) % 10
+			ram[I + 1] = math.floor(n / 10) % 10
 			ram[I + 2] = n % 10
 		elseif bit3 == 0x5 and bit4 == 0x5 then -- LD mpoke
 			for i=0, bit2 do
 				ram[I + i] = V[i]
 			end
-			I = I + bit2 + 1
+			I = bit32.band(I + bit2 + 1, 0xFFFF)
 		elseif bit3 == 0x6 and bit4 == 0x5 then -- LD mpeek
 			for i=0, bit2 do
 				V[I] = ram[I + i]
 				i = i + 1
 			end
-			I = I + bit2 + 1
+			I = bit32.band(I + bit2 + 1, 0xFFFF)
 		else
 			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
@@ -466,6 +466,7 @@ end
 
 -- Handle rom selector user input
 function handleRomSelection()
+	local loadState = false
 	pad = Controls.read()
 	if Controls.check(pad, SCE_CTRL_UP) and not Controls.check(oldpad, SCE_CTRL_UP) then
 		cursor = cursor - 1
@@ -580,13 +581,20 @@ function handlePauseKeys()
 		elseif cursor == 3 then -- Load savestate
 			loadSavestate()
 			pushNotification("Savestate loaded successfully!")
-		elseif cursor == 4 then -- Options
+		elseif cursor == 4 then -- Show / Hide debugger
+			debugger = not debugger
+			if debugger then
+				pushNotification("Debugger enabled")
+			else
+				pushNotification("Debugger disabled")
+			end
+		elseif cursor == 5 then -- Options
 			state = 3
 			cursor = 1
 			old_state = 2
 			old_bg_color = bg_color
 			old_nbg_color = nbg_color
-		elseif cursor == 5 then -- Close rom
+		elseif cursor == 6 then -- Close rom
 			state = 0
 			cursor = 1
 		end
@@ -596,8 +604,8 @@ end
 
 -- Draws pause menu
 function drawPauseMenu()
-	Graphics.fillRect(300, 660, 150, 260, white)
-	Graphics.fillRect(301, 659, 151, 259, black)
+	Graphics.fillRect(300, 660, 150, 280, white)
+	Graphics.fillRect(301, 659, 151, 279, black)
 	for i=1, #pause_menu_entries do
 		if i == cursor then
 			Graphics.debugPrint(305, 155 + (i-1)*20, pause_menu_entries[i], cyan)
@@ -605,6 +613,25 @@ function drawPauseMenu()
 			Graphics.debugPrint(305, 155 + (i-1)*20, pause_menu_entries[i], white)
 		end
 	end
+end
+
+-- Draws debugger
+function drawDebugger()
+	Graphics.fillRect(5, 955, 470, 540, white)
+	Graphics.fillRect(6, 954, 471, 539, black)
+	Graphics.debugPrint(10, 475, "PC: 0x" .. string.format("%X",PC), white)
+	Graphics.debugPrint(10, 495, "SP: 0x" .. string.format("%X",SP), white)
+	if SP > 0 then
+		Graphics.debugPrint(10, 515, "RA: 0x" .. string.format("%X",stack[SP-1]), white)
+	else
+		Graphics.debugPrint(10, 515, "RA: 0x00", white)
+	end
+	for i=0, 15 do
+		local z = i % 3
+		Graphics.debugPrint(130 + math.floor(i/3) * 120, 475 + 20 * z, "V" .. i .. ": 0x" .. string.format("%X",V[i]), white)
+	end
+	Graphics.debugPrint(730, 495, "I: 0x" .. string.format("%X",I), white)
+	Graphics.debugPrint(730, 515, "Ins: 0x" .. string.format("%X",opcode), white)
 end
 
 -- Save options config
@@ -803,7 +830,9 @@ while true do
 		Screen.flip()
 		handleRomSelection()
 	elseif state == 1 then -- Game loop
-		executeOpcode()
+		for i=0, 8 do
+			executeOpcode()
+		end
 		if updateScreen then
 			Graphics.initBlend()
 			drawScreen()
@@ -811,6 +840,9 @@ while true do
 			if state_timer > 0 then
 				Graphics.debugPrint(0, 0, notification, yellow)
 				state_timer = state_timer - 1
+			end
+			if debugger then
+				drawDebugger()
 			end
 			Graphics.termBlend()
 			Screen.flip()
@@ -825,6 +857,9 @@ while true do
 			state_timer = state_timer - 1
 		end
 		drawPauseMenu()
+		if debugger then
+			drawDebugger()
+		end
 		Graphics.termBlend()
 		Screen.flip()
 		handlePauseKeys()
