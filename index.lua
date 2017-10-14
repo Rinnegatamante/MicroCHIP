@@ -215,9 +215,9 @@ function drawScreen()
 	if schip_mode then
 		for y=0, 63 do
 			for x=0, 127 do
-				x_val = x * 7
+				x_val = (x * 7) + 32
 				y_val = (y * 7) + 48
-				if super_screen[bit32.lshift(y,6) + x] == 0 then
+				if super_screen[bit32.lshift(y,7) + x] == 0 then
 					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, bg_color)
 				else
 					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, nbg_color)
@@ -452,7 +452,7 @@ function executeOpcode()
 					for xline=0, 7 do
 						local x_idx = (x + xline) % 128
 						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
-							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 7))
 							if super_screen[pixel_idx] == 1 then
 								V[0xF] = 1
 							end
@@ -463,7 +463,7 @@ function executeOpcode()
 					for xline=8, 15 do
 						local x_idx = (x + xline) % 128
 						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
-							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 7))
 							if super_screen[pixel_idx] == 1 then
 								V[0xF] = 1
 							end
@@ -478,7 +478,7 @@ function executeOpcode()
 					for xline=0, 7 do
 						local x_idx = (x + xline) % 128
 						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) > 0) then
-							pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+							pixel_idx = x_idx + (bit32.lshift(y_idx, 7))
 							if super_screen[pixel_idx] == 1 then
 								V[0xF] = 1
 							end
