@@ -126,10 +126,8 @@ function initEmu()
 	sound_timer = 0
 	
 	-- Loading fontset
-	local i = 0
-	while i < 0x50 do
+	for i=0, 0x4F do
 		ram[i] = fontset[i+1]
-		i = i + 1
 	end
 	
 	-- Selecting a seed for random purposes
@@ -161,13 +159,10 @@ function loadRom(filename)
 	initEmu()
 	fd = System.openFile(filename, FREAD)
 	rom_size = System.sizeFile(fd)
-	local i = 0
-	while i < rom_size do
+	for i=0, rom_size-1 do
 		ram[i + 0x200] = string.byte(System.readFile(fd, 1))
-		i = i + 1
 	end
 	System.closeFile(fd)
-	in_game = true
 	purgeScreen()
 	cur_rom = roms[cursor]
 	pushNotification("Rom " .. cur_rom .. " loaded successfully!")
@@ -175,20 +170,18 @@ end
 
 -- Draw CHIP-8 display on screen
 function drawScreen()
-	if updateScreen then
-		for y=0, 31 do
-			for x=0, 63 do
-				x_val = x * 15
-				y_val = (y * 15) + 32
-				if screen[bit32.lshift(y,6) + x] == 0 then
-					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
-				else
-					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
-				end
+	for y=0, 31 do
+		for x=0, 63 do
+			x_val = x * 15
+			y_val = (y * 15) + 32
+			if screen[bit32.lshift(y,6) + x] == 0 then
+				Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
+			else
+				Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
 			end
 		end
-		updateScreen = false
 	end
+	updateScreen = false
 end
 
 -- Handle CHIP-8 keyboard
@@ -258,208 +251,169 @@ function executeOpcode()
 	bit4 = bit32.band(opcode,0x000F)
 	
 	-- Executing opcode
+	PC = PC + 2
 	if bit1 == 0x0 then
-		if bit4 == 0x0 then
+		if bit4 == 0x0 then -- CLS
 			clearScreen()
-			PC = PC + 2
-		elseif bit4 == 0xE then
+		elseif bit4 == 0xE then -- RET
 			SP = SP - 1
 			PC = stack[SP]
-			PC = PC + 2
 		else
-			showError("ERROR: Unknown opcode: 0x" .. string.format("%x",opcode))
+			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
-	elseif bit1 == 0x1 then
+	elseif bit1 == 0x1 then -- JP
 		PC = bit32.band(opcode,0x0FFF)
-	elseif bit1 == 0x2 then
+	elseif bit1 == 0x2 then -- CALL
 		stack[SP] = PC
 		SP = SP + 1
 		PC = bit32.band(opcode,0x0FFF)
-	elseif bit1 == 0x3 then
-		val = bit32.band(opcode, 0x00FF)
-		if V[bit2] == val then
-			PC = PC + 4
-		else
-			PC = PC + 2
-		end
-	elseif bit1 == 0x4 then
+	elseif bit1 == 0x3 then -- SE
 		val = bit32.band(opcode, 0x00FF)
 		if V[bit2] == val then
 			PC = PC + 2
-		else
-			PC = PC + 4
 		end
-	elseif bit1 == 0x5 then
+	elseif bit1 == 0x4 then -- SNE
+		val = bit32.band(opcode, 0x00FF)
+		if V[bit2] ~= val then
+			PC = PC + 2
+		end
+	elseif bit1 == 0x5 then -- SE
 		if V[bit2] == V[bit3] then
-			PC = PC + 4
-		else
 			PC = PC + 2
 		end
-	elseif bit1 == 0x6 then
+	elseif bit1 == 0x6 then -- LD
 		V[bit2] = bit32.band(opcode, 0x00FF)
-		PC = PC + 2
-	elseif bit1 == 0x7 then
-		V[bit2] = V[bit2] + bit32.band(opcode, 0x00FF)
-		PC = PC + 2
+	elseif bit1 == 0x7 then -- ADD
+		V[bit2] = bit32.band(V[bit2] + bit32.band(opcode, 0x00FF), 0x00FF)
 	elseif bit1 == 0x8 then
-		if bit4 == 0x0 then
+		if bit4 == 0x0 then -- LD
 			V[bit2] = V[bit3]
-			PC = PC + 2
-		elseif bit4 == 0x1 then
-			V[bit2] = bit32.bor(V[bit2],V[bit3])
-			PC = PC + 2
-		elseif bit4 == 0x2 then
+		elseif bit4 == 0x1 then -- OR
+			V[bit2] = bit32.band(bit32.bor(V[bit2],V[bit3]),0x00FF)
+		elseif bit4 == 0x2 then -- AND
 			V[bit2] = bit32.band(V[bit2],V[bit3])
-			PC = PC + 2
-		elseif bit4 == 0x3 then
-			V[bit2] = bit32.bxor(V[bit2],V[bit3])
-			PC = PC + 2
-		elseif bit4 == 0x4 then
-			if V[bit3] > (0xFF - V[bit2]) then
+		elseif bit4 == 0x3 then -- XOR
+			V[bit2] = bit32.band(bit32.bxor(V[bit2],V[bit3]),0x00FF)
+		elseif bit4 == 0x4 then -- ADD
+			V[bit2] = V[bit2] + V[bit3]
+			if V[bit2] > 0xFF then
 				V[0xF] = 1
+				V[bit2] = bit32.band(V[bit2], 0x00FF)
 			else
 				V[0xF] = 0
 			end
-			V[bit2] = V[bit2] + V[bit3]
-			PC = PC + 2
-		elseif bit4 == 0x5 then
+		elseif bit4 == 0x5 then -- SUB
 			if V[bit3] > V[bit2] then
 				V[0xF] = 0
 			else
 				V[0xF] = 1
 			end
 			V[bit2] = V[bit2] - V[bit3]
-			PC = PC + 2
-		elseif bit4 == 0x6 then
-			V[0xF] = bit32.band(V[bit2],1)
-			V[bit2] = bit32.rshift(V[bit2],1)
-			PC = PC + 2
-		elseif bit4 == 0x7 then
-			if V[bit2] > V[bit3] then
-				V[0xF] = 0
-			else
-				V[0xF] = 1
-			end
+		elseif bit4 == 0x6 then -- SHR
+			V[0xF] = bit32.band(V[bit3],1)
+			V[bit2] = bit32.rshift(V[bit3],1)
+		elseif bit4 == 0x7 then -- SUBN
 			V[bit2] = V[bit3] - V[bit2]
-			PC = PC + 2
-		elseif bit4 == 0xE then
-			V[0xF] = bit32.rshift(V[bit2],7)
-			V[bit2] = bit32.lshift(V[bit2],1)
-			PC = PC + 2
+			if V[bit2] > 0 then
+				V[0xF] = 1
+			else
+				V[0xF] = 0
+				V[bit2] = bit32.band(V[bit2], 0x00FF)
+			end
+		elseif bit4 == 0xE then -- SHL
+			V[0xF] = bit32.band(bit32.rshift(V[bit3],7),1)
+			V[bit2] = bit32.lshift(V[bit3],1)
 		else
-			showError("ERROR: Unknown opcode: 0x" .. string.format("%x",opcode))
+			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
-	elseif bit1 == 0x9 then
-		if V[bit2] == V[bit3] then
+	elseif bit1 == 0x9 then -- SNE
+		if V[bit2] ~= V[bit3] then
 			PC = PC + 2
-		else
-			PC = PC + 4
 		end
-	elseif bit1 == 0xA then
+	elseif bit1 == 0xA then -- LD I
 		I = bit32.band(opcode,0x0FFF)
-		PC = PC + 2
-	elseif bit1 == 0xB then
+	elseif bit1 == 0xB then -- JP V0
 		PC = V[0] + bit32.band(opcode, 0x0FFF)
-	elseif bit1 == 0xC then
-		V[bit2] = bit32.band(math.random() % 0xFF, bit32.band(opcode, 0x00FF))
-		PC = PC + 2
-	elseif bit1 == 0xD then
+	elseif bit1 == 0xC then -- RND
+		V[bit2] = bit32.band(math.random() % 0x100, bit32.band(opcode, 0x00FF))
+	elseif bit1 == 0xD then -- DRW
 		local x = V[bit2]
 		local y = V[bit3]
 		local h = bit4
 		V[0xF] = 0
 		for yline=0, h-1 do
-			if y + yline < 32 then
-				pixel = ram[I + yline]
-				for xline=0, 7 do
-					if x + xline < 64 then
-						if ((bit32.band(pixel,bit32.rshift(0x80, xline))) ~= 0) then
-							pixel_idx = x + xline + (bit32.lshift(y + yline, 6))
-							if screen[pixel_idx] == 1 then
-								V[0xF] = 1
-							end
-							screen[pixel_idx] = bit32.bxor(screen[pixel_idx], 1)
-						end
+			local y_idx = (y + yline) % 32
+			pixel = ram[I + yline]
+			for xline=0, 7 do
+				local x_idx = (x + xline) % 64
+				if ((bit32.band(pixel,bit32.rshift(0x80, xline))) ~= 0) then
+					pixel_idx = x_idx + (bit32.lshift(y_idx, 6))
+					if screen[pixel_idx] == 1 then
+						V[0xF] = 1
+						screen[pixel_idx] = 0
+					else
+						screen[pixel_idx] = 1
 					end
 				end
 			end
 		end
 		updateScreen = true
-		PC = PC + 2
 	elseif bit1 == 0xE then
-		if bit3 == 0x9 and bit4 == 0xE then
+		if bit3 == 0x9 and bit4 == 0xE then -- SKP
 			if key[V[bit2]] then
-				PC = PC + 4
-			else
 				PC = PC + 2
 			end
-		elseif bit3 == 0xA and bit4 == 0x1 then
-			if key[V[bit2]] then
+		elseif bit3 == 0xA and bit4 == 0x1 then -- SKNP
+			if not key[V[bit2]] then
 				PC = PC + 2
-			else
-				PC = PC + 4
 			end
 		else
-			showError("ERROR: Unknown opcode: 0x" .. string.format("%x",opcode))
+			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
 	elseif bit1 == 0xF then
-		if bit3 == 0x0 and bit4 == 0x7 then
+		if bit3 == 0x0 and bit4 == 0x7 then -- LD DT
 			V[bit2] = delay_timer
-			PC = PC + 2
-		elseif bit3 == 0x0 and bit4 == 0xA then
+		elseif bit3 == 0x0 and bit4 == 0xA then -- LD KEY
 			keyPress = false
-			local key_idx = 0
-			while key_idx < 16 do
+			for key_idx=0, 15 do
 				if key[key_idx] then
 					V[bit2] = key_idx
 					keyPress = true
+					break
 				end
-				key_idx = key_idx + 1
 			end
 			if not keyPress then
-				return
+				PC = PC - 2
 			end
-			PC = PC + 2
-		elseif bit3 == 0x1 and bit4 == 0x5 then
+		elseif bit3 == 0x1 and bit4 == 0x5 then -- LD DT (set)
 			delay_timer = V[bit2]
-			PC = PC + 2
-		elseif bit3 == 0x1 and bit4 == 0x8 then
+		elseif bit3 == 0x1 and bit4 == 0x8 then -- LD ST (set)
 			sound_timer = V[bit2]
-			PC = PC + 2
-		elseif bit3 == 0x1 and bit4 == 0xE then
-			if (I + V[bit2]) > 0xFFF then
-				V[0xF] = 1
-			else
-				V[0xF] = 0
-			end
+		elseif bit3 == 0x1 and bit4 == 0xE then -- ADD I
 			I = I + V[bit2]
-			PC = PC + 2
-		elseif bit3 == 0x2 and bit4 == 0x9 then
+		elseif bit3 == 0x2 and bit4 == 0x9 then -- LD sprite
 			I = V[bit2] * 5
-			PC = PC + 2
-		elseif bit3 == 0x3 and bit4 == 0x3 then
-			ram[I] = V[bit2] / 100
-			ram[I + 1] = (V[bit2] / 10) % 10
-			ram[I + 2] = (V[bit2] % 100) % 10
-			PC = PC + 2
-		elseif bit3 == 0x5 and bit4 == 0x5 then
-			for i=0, bit2 - 1 do
+		elseif bit3 == 0x3 and bit4 == 0x3 then -- LD BCD
+			local n = V[bit2]
+			ram[I] = (n / 100) % 10
+			ram[I + 1] = (n / 10) % 10
+			ram[I + 2] = n % 10
+		elseif bit3 == 0x5 and bit4 == 0x5 then -- LD mpoke
+			for i=0, bit2 do
 				ram[I + i] = V[i]
 			end
 			I = I + bit2 + 1
-			PC = PC + 2
-		elseif bit3 == 0x6 and bit4 == 0x5 then
-			for i=0, bit2 - 1 do
+		elseif bit3 == 0x6 and bit4 == 0x5 then -- LD mpeek
+			for i=0, bit2 do
 				V[I] = ram[I + i]
 				i = i + 1
 			end
 			I = I + bit2 + 1
-			PC = PC + 2
 		else
-			showError("ERROR: Unknown opcode: 0x" .. string.format("%x",opcode))
+			showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 		end
 	else
-		showError("ERROR: Unknown opcode: 0x" .. string.format("%x",opcode))
+		showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 	end
 	
 	-- Updating timers
@@ -571,32 +525,29 @@ function saveSavestate()
 		System.deleteFile(savFolder.."/"..cur_rom..".sav")
 	end
 	local fd = System.openFile(savFolder.."/"..cur_rom..".sav", FCREATE)
+	local buffer = ""
 	PC_b1 = bit32.rshift(bit32.band(PC,0xFF00),8)
 	PC_b2 = bit32.band(PC,0x00FF)
-	System.writeFile(fd,string.char(PC_b1),1)
-	System.writeFile(fd,string.char(PC_b2),1)
+	buffer = buffer .. string.char(PC_b1) .. string.char(PC_b2)
 	I_b1 = bit32.rshift(bit32.band(I,0xFF00),8)
 	I_b2 = bit32.band(I,0x00FF)
-	System.writeFile(fd,string.char(I_b1),1)
-	System.writeFile(fd,string.char(I_b2),1)
-	System.writeFile(fd,string.char(SP),1)
-	System.writeFile(fd,string.char(delay_timer),1)
-	System.writeFile(fd,string.char(sound_timer),1)
+	buffer = buffer .. string.char(I_b1) .. string.char(I_b2)
+	buffer = buffer .. string.char(SP) .. string.char(delay_timer) .. string.char(sound_timer)
 	for i=0, 15 do
-		System.writeFile(fd,string.char(V[i]),1)
+		buffer = buffer .. string.char(V[i])
 	end
 	for i=0, 15 do
 		S_b1 = bit32.rshift(bit32.band(stack[i],0xFF00),8)
 		S_b2 = bit32.band(stack[i],0x00FF)
-		System.writeFile(fd,string.char(S_b1),1)
-		System.writeFile(fd,string.char(S_b2),1)
+		buffer = buffer .. string.char(S_b1) .. string.char(S_b2)
 	end
 	for i=0, 0x800 do
-		System.writeFile(fd,string.char(screen[i]),1)
+		buffer = buffer .. string.char(screen[i])
 	end
 	for i=0, 0xFFF do
-		System.writeFile(fd,string.char(ram[i]),1)
+		buffer = buffer .. string.char(ram[i])
 	end
+	System.writeFile(fd,buffer,0x1828)
 	System.closeFile(fd)
 end
 
@@ -605,7 +556,7 @@ function handlePauseKeys()
 	t = Controls.readTouch()
 	if t ~= nil and not (old_t ~= nil) then
 		state = 1
-		pushNotification("Game resumed")
+		pushNotification("Game resumed.")
 	end
 	old_t = t
 	pad = Controls.read()
@@ -622,7 +573,7 @@ function handlePauseKeys()
 	elseif Controls.check(pad, SCE_CTRL_CROSS) and not Controls.check(oldpad, SCE_CTRL_CROSS) then
 		if cursor == 1 then -- Resume game
 			state = 1
-			pushNotification("Game resumed")
+			pushNotification("Game resumed.")
 		elseif cursor == 2 then -- Save savestate
 			saveSavestate()
 			pushNotification("Savestate created successfully!")
@@ -669,9 +620,10 @@ function saveConfig()
 	System.writeFile(fd, string.char(nbg_g), 1)
 	System.writeFile(fd, string.char(nbg_b), 1)
 	System.closeFile(fd)
+	pushNotification("Config saved successfully!")
 end
 
--- Save options config
+-- Load options config
 function loadConfig()
 	if System.doesFileExist("ux0:data/MicroCHIP/options.cfg") then
 		local fd = System.openFile("ux0:data/MicroCHIP/options.cfg", FREAD)
@@ -852,19 +804,20 @@ while true do
 		handleRomSelection()
 	elseif state == 1 then -- Game loop
 		executeOpcode()
-		Graphics.initBlend()
-		drawScreen()
-		Graphics.fillRect(0, 960, 0, 32, black)
-		if state_timer > 0 then
-			Graphics.debugPrint(0, 0, notification, yellow)
-			state_timer = state_timer - 1
+		if updateScreen then
+			Graphics.initBlend()
+			drawScreen()
+			Graphics.fillRect(0, 960, 0, 32, black)
+			if state_timer > 0 then
+				Graphics.debugPrint(0, 0, notification, yellow)
+				state_timer = state_timer - 1
+			end
+			Graphics.termBlend()
+			Screen.flip()
 		end
-		Graphics.termBlend()
-		Screen.flip()
 		handleKeys()
 	elseif state == 2 then -- Pause menu
 		Graphics.initBlend()
-		updateScreen = true
 		drawScreen()
 		Graphics.fillRect(0, 960, 0, 32, black)
 		if state_timer > 0 then
