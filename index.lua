@@ -40,25 +40,27 @@ local old_nbg_color = nbg_color
 
 -- Key Mapping
 local keys = {
-	{["val"] = SCE_CTRL_UP, ["int"] = 0x01},
-	{["val"] = SCE_CTRL_DOWN, ["int"] = 0x04},
-	{["val"] = SCE_CTRL_LEFT, ["int"] = 0x02},
-	{["val"] = SCE_CTRL_RIGHT, ["int"] = 0x03},
-	{["val"] = SCE_CTRL_TRIANGLE, ["int"] = 0x0C},
-	{["val"] = SCE_CTRL_CROSS, ["int"] = 0x0D},
-	{["val"] = SCE_CTRL_SQUARE, ["int"] = 0x0E},
-	{["val"] = SCE_CTRL_CIRCLE, ["int"] = 0x0F},
-	{["val"] = SCE_CTRL_LTRIGGER, ["int"] = 0x05},
-	{["val"] = SCE_CTRL_RTRIGGER, ["int"] = 0x06},
-	{["val"] = SCE_CTRL_START, ["int"] = 0x07},
-	{["val"] = SCE_CTRL_SELECT, ["int"] = 0x08}
+	{["name"] = "Up", ["val"] = SCE_CTRL_UP, ["int"] = 0x1},
+	{["name"] = "Down", ["val"] = SCE_CTRL_DOWN, ["int"] = 0x4},
+	{["name"] = "Left", ["val"] = SCE_CTRL_LEFT, ["int"] = 0x2},
+	{["name"] = "Right", ["val"] = SCE_CTRL_RIGHT, ["int"] = 0x3},
+	{["name"] = "Triangle", ["val"] = SCE_CTRL_TRIANGLE, ["int"] = 0xC},
+	{["name"] = "Cross", ["val"] = SCE_CTRL_CROSS, ["int"] = 0xD},
+	{["name"] = "Square", ["val"] = SCE_CTRL_SQUARE, ["int"] = 0xE},
+	{["name"] = "Circle", ["val"] = SCE_CTRL_CIRCLE, ["int"] = 0xF},
+	{["name"] = "L Trigger", ["val"] = SCE_CTRL_LTRIGGER, ["int"] = 0x5},
+	{["name"] = "R Trigger", ["val"] = SCE_CTRL_RTRIGGER, ["int"] = 0x6},
+	{["name"] = "Start", ["val"] = SCE_CTRL_START, ["int"] = 0x7},
+	{["name"] = "Select", ["val"] = SCE_CTRL_SELECT, ["int"] = 0x8}
 }
+local keys_backup = {}
 
 -- Emulator State
 local state = 0
 local old_state = 0
-local romFolder = "ux0:data/MicroCHIP/roms"
-local savFolder = "ux0:data/MicroCHIP/saves"
+local emuFolder = "ux0:data/MicroCHIP"
+local romFolder = emuFolder .. "/roms"
+local savFolder = emuFolder .. "/saves"
 local roms = {}
 local ver = "1.0"
 local cursor = 1
@@ -91,16 +93,16 @@ local fontset = {
 
 -- SCHIP-8 Fontset
 local super_fontset = {
-	0xFF, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF,	-- 0
-	0x18, 0x78, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0xFF, 0xFF,	-- 1
-	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF,	-- 2
-	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 3
+	0xFF, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, -- 0
+	0x18, 0x78, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0xFF, 0xFF, -- 1
+	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, -- 2
+	0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, -- 3
 	0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0x03, 0x03, -- 4
-	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 5
-	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF,	-- 6
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, -- 5
+	0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, -- 6
 	0xFF, 0xFF, 0x03, 0x03, 0x06, 0x0C, 0x18, 0x18, 0x18, 0x18, -- 7
-	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF,	-- 8
-	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF,	-- 9
+	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, -- 8
+	0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, -- 9
 	0x7E, 0xFF, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xC3, -- A
 	0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, -- B
 	0x3C, 0xFF, 0xC3, 0xC0, 0xC0, 0xC0, 0xC0, 0xC3, 0xFF, 0x3C, -- C
@@ -300,11 +302,11 @@ end
 function executeOpcode()
 
 	-- Fetching opcode
-	opcode = bit32.bor(bit32.lshift(ram[PC],8), ram[PC + 1])
-	bit1 = bit32.rshift(bit32.band(opcode,0xF000),12)
-	bit2 = bit32.rshift(bit32.band(opcode,0x0F00),8)
-	bit3 = bit32.rshift(bit32.band(opcode,0x00F0),4)
-	bit4 = bit32.band(opcode,0x000F)
+	local opcode = bit32.bor(bit32.lshift(ram[PC],8), ram[PC + 1])
+	local bit1 = bit32.rshift(bit32.band(opcode,0xF000),12)
+	local bit2 = bit32.rshift(bit32.band(opcode,0x0F00),8)
+	local bit3 = bit32.rshift(bit32.band(opcode,0x00F0),4)
+	local bit4 = bit32.band(opcode,0x000F)
 	
 	-- Executing opcode
 	PC = PC + 2
@@ -794,34 +796,100 @@ end
 
 -- Save options config
 function saveConfig()
-	if System.doesFileExist("ux0:data/MicroCHIP/options.cfg") then
-		System.deleteFile("ux0:data/MicroCHIP/options.cfg")
+	if System.doesFileExist(emuFolder .. "/options.cfg") then
+		System.deleteFile(emuFolder .. "/options.cfg")
 	end
-	local fd = System.openFile("ux0:data/MicroCHIP/options.cfg", FCREATE)
+	local fd = System.openFile(emuFolder .. "/options.cfg", FCREATE)
 	System.writeFile(fd, string.char(bg_r), 1)
 	System.writeFile(fd, string.char(bg_g), 1)
 	System.writeFile(fd, string.char(bg_b), 1)
 	System.writeFile(fd, string.char(nbg_r), 1)
 	System.writeFile(fd, string.char(nbg_g), 1)
 	System.writeFile(fd, string.char(nbg_b), 1)
+	for i=1, 12 do
+		System.writeFile(fd, string.char(keys[i].int), 1)
+	end
 	System.closeFile(fd)
 	pushNotification("Config saved successfully!")
 end
 
 -- Load options config
 function loadConfig()
-	if System.doesFileExist("ux0:data/MicroCHIP/options.cfg") then
-		local fd = System.openFile("ux0:data/MicroCHIP/options.cfg", FREAD)
+	if System.doesFileExist(emuFolder .. "/options.cfg") then
+		local fd = System.openFile(emuFolder .. "/options.cfg", FREAD)
 		bg_r = string.byte(System.readFile(fd, 1))
 		bg_g = string.byte(System.readFile(fd, 1))
 		bg_b = string.byte(System.readFile(fd, 1))
 		nbg_r = string.byte(System.readFile(fd, 1))
 		nbg_g = string.byte(System.readFile(fd, 1))
 		nbg_b = string.byte(System.readFile(fd, 1))
+		for i=1, 12 do
+			keys[i].int = string.byte(System.readFile(fd, 1))
+		end
 		System.closeFile(fd)
 		bg_color = Color.new(bg_r, bg_g, bg_b)
 		nbg_color = Color.new(nbg_r, nbg_g, nbg_b)
 	end
+end
+
+-- Draw keys rebind menu
+function drawRebindMenu()
+	Screen.clear()
+	for i=1, 12 do
+		if i == cursor then
+			Graphics.debugPrint(20, 30 + i * 20, keys[i].name .. " : " .. string.format("%X", keys[i].int), cyan)
+		else
+			Graphics.debugPrint(20, 30 + i * 20, keys[i].name .. " : " .. string.format("%X", keys[i].int), white)
+		end
+	end
+	if cursor == 13 then
+		Graphics.debugPrint(20, 320, "Save changes", cyan)
+	else
+		Graphics.debugPrint(20, 320, "Save changes", white)
+	end
+	if cursor == 14 then
+		Graphics.debugPrint(20, 340, "Discard changes", cyan)
+	else
+		Graphics.debugPrint(20, 340, "Discard changes", white)
+	end
+end
+
+function handleRebindKeys()
+	pad = Controls.read()
+	if Controls.check(pad, SCE_CTRL_UP) and not Controls.check(oldpad, SCE_CTRL_UP) then
+		cursor = cursor - 1
+		if cursor < 1 then
+			cursor = 14
+		end
+	elseif Controls.check(pad, SCE_CTRL_DOWN) and not Controls.check(oldpad, SCE_CTRL_DOWN) then
+		cursor = cursor + 1
+		if cursor > 14 then
+			cursor = 1
+		end
+	elseif Controls.check(pad, SCE_CTRL_CROSS) and not Controls.check(oldpad, SCE_CTRL_CROSS) then
+		if cursor >= 13 then
+			state = 3
+			cursor = 1
+			if cursor == 14 then
+				for i=1, 12 do
+					keys[i].int = keys_backup[i]
+				end
+			end
+		end
+	elseif Controls.check(pad, SCE_CTRL_LEFT) and not Controls.check(oldpad, SCE_CTRL_LEFT) then
+		if cursor <= 12 then
+			if keys[cursor].int > 0x1 then
+				keys[cursor].int = keys[cursor].int - 1
+			end
+		end
+	elseif Controls.check(pad, SCE_CTRL_RIGHT) and not Controls.check(oldpad, SCE_CTRL_RIGHT) then
+		if cursor <= 12 then
+			if keys[cursor].int < 0xF then
+				keys[cursor].int = keys[cursor].int + 1
+			end
+		end
+	end
+	oldpad = pad
 end
 
 -- Draw options menu
@@ -856,14 +924,19 @@ function drawOptionsMenu()
 	
 	-- Menu entries
 	if cursor == 7 then
-		Graphics.debugPrint(20, 450, "Save changes", cyan)
+		Graphics.debugPrint(20, 450, "Rebind keys", cyan)
 	else
-		Graphics.debugPrint(20, 450, "Save changes", white)
+		Graphics.debugPrint(20, 450, "Rebind keys", white)
 	end
 	if cursor == 8 then
-		Graphics.debugPrint(20, 470, "Discard changes", cyan)
+		Graphics.debugPrint(20, 470, "Save changes", cyan)
 	else
-		Graphics.debugPrint(20, 470, "Discard changes", white)
+		Graphics.debugPrint(20, 470, "Save changes", white)
+	end
+	if cursor == 9 then
+		Graphics.debugPrint(20, 490, "Discard changes", cyan)
+	else
+		Graphics.debugPrint(20, 490, "Discard changes", white)
 	end
 	
 end
@@ -873,19 +946,25 @@ function handleOptionsKeys()
 	if Controls.check(pad, SCE_CTRL_UP) and not Controls.check(oldpad, SCE_CTRL_UP) then
 		cursor = cursor - 1
 		if cursor < 1 then
-			cursor = 8
+			cursor = 9
 		end
 	elseif Controls.check(pad, SCE_CTRL_DOWN) and not Controls.check(oldpad, SCE_CTRL_DOWN) then
 		cursor = cursor + 1
-		if cursor > 8 then
+		if cursor > 9 then
 			cursor = 1
 		end
 	elseif Controls.check(pad, SCE_CTRL_CROSS) and not Controls.check(oldpad, SCE_CTRL_CROSS) then
 		if cursor == 7 then
+			state = 4
+			cursor = 1
+			for i=1, 12 do
+				keys_backup[i] = keys[i].int
+			end
+		elseif cursor == 8 then
 			state = old_state
 			cursor = 1
 			saveConfig()
-		elseif cursor == 8 then
+		elseif cursor == 9 then
 			state = old_state
 			cursor = 1
 			bg_color = old_bg_color
@@ -1027,6 +1106,12 @@ while true do
 		Graphics.termBlend()
 		Screen.flip()
 		handleOptionsKeys()
+	elseif state == 4 then -- Keys Rebinding
+		Graphics.initBlend()
+		drawRebindMenu()
+		Graphics.termBlend()
+		Screen.flip()
+		handleRebindKeys()
 	end
 	
 end
