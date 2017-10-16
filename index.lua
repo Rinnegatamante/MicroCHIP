@@ -16,6 +16,7 @@ local updateScreen = false
 local beep = nil
 local cur_rom = ""
 local schip_mode = false
+local update_timers = false
 
 -- Custom colors
 local bg_r = 0
@@ -54,6 +55,9 @@ local keys = {
 	{["name"] = "Select", ["val"] = SCE_CTRL_SELECT, ["int"] = 0x8}
 }
 local keys_backup = {}
+
+-- Localizing most used functions for performance
+local drawRect = Graphics.fillRect
 
 -- Emulator State
 local state = 0
@@ -220,9 +224,9 @@ function drawScreen()
 				x_val = (x * 7) + 32
 				y_val = (y * 7) + 48
 				if super_screen[bit32.lshift(y,7) + x] == 0 then
-					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, bg_color)
+					drawRect(x_val, x_val + 7, y_val, y_val + 7, bg_color)
 				else
-					Graphics.fillRect(x_val, x_val + 7, y_val, y_val + 7, nbg_color)
+					drawRect(x_val, x_val + 7, y_val, y_val + 7, nbg_color)
 				end
 			end
 		end
@@ -232,9 +236,9 @@ function drawScreen()
 				x_val = x * 15
 				y_val = (y * 15) + 32
 				if screen[bit32.lshift(y,6) + x] == 0 then
-					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
+					drawRect(x_val, x_val + 15, y_val, y_val + 15, bg_color)
 				else
-					Graphics.fillRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
+					drawRect(x_val, x_val + 15, y_val, y_val + 15, nbg_color)
 				end
 			end
 		end
@@ -302,7 +306,7 @@ end
 function executeOpcode()
 
 	-- Fetching opcode
-	local opcode = bit32.bor(bit32.lshift(ram[PC],8), ram[PC + 1])
+	opcode = bit32.bor(bit32.lshift(ram[PC],8), ram[PC + 1])
 	local bit1 = bit32.rshift(bit32.band(opcode,0xF000),12)
 	local bit2 = bit32.rshift(bit32.band(opcode,0x0F00),8)
 	local bit3 = bit32.rshift(bit32.band(opcode,0x00F0),4)
@@ -555,12 +559,10 @@ function executeOpcode()
 			for i=0, bit2 do
 				ram[I + i] = V[i]
 			end
-			I = bit32.band(I + bit2 + 1, 0xFFFF)
 		elseif bit3 == 0x6 and bit4 == 0x5 then -- LD Vx, [I]
 			for i=0, bit2 do
 				V[i] = ram[I + i]
 			end
-			I = bit32.band(I + bit2 + 1, 0xFFFF)
 		elseif bit3 == 0x7 and bit4 == 0x5 then -- LD R, Vx *SCHIP*
 			for i=0, bit2 do
 				hp48_flags[i] = V[i]
@@ -576,15 +578,23 @@ function executeOpcode()
 		showError("ERROR: Unknown opcode: 0x" .. string.format("%X",opcode))
 	end
 	
+end
+
+function handleTimers()
+	
+	update_timers = not update_timers
+	
 	-- Updating timers
-	if delay_timer > 0 then
-		delay_timer = delay_timer - 1
-	end
-	if sound_timer > 0 then
-		if sound_timer == 1 then
-			Sound.play(beep, NO_LOOP)
+	if update_timers then
+		if delay_timer > 0 then
+			delay_timer = delay_timer - 1
 		end
-		sound_timer = sound_timer - 1
+		if sound_timer > 0 then
+			if sound_timer == 1 then
+				Sound.play(beep, NO_LOOP)
+			end
+			sound_timer = sound_timer - 1
+		end
 	end
 	
 end
@@ -764,8 +774,8 @@ end
 
 -- Draws pause menu
 function drawPauseMenu()
-	Graphics.fillRect(300, 660, 150, 280, white)
-	Graphics.fillRect(301, 659, 151, 279, black)
+	drawRect(300, 660, 150, 280, white)
+	drawRect(301, 659, 151, 279, black)
 	for i=1, #pause_menu_entries do
 		if i == cursor then
 			Graphics.debugPrint(305, 155 + (i-1)*20, pause_menu_entries[i], cyan)
@@ -777,8 +787,8 @@ end
 
 -- Draws debugger
 function drawDebugger()
-	Graphics.fillRect(5, 955, 470, 540, white)
-	Graphics.fillRect(6, 954, 471, 539, black)
+	drawRect(5, 955, 470, 540, white)
+	drawRect(6, 954, 471, 539, black)
 	Graphics.debugPrint(10, 475, "PC: 0x" .. string.format("%X",PC), white)
 	Graphics.debugPrint(10, 495, "SP: 0x" .. string.format("%X",SP), white)
 	if SP > 0 then
@@ -897,29 +907,29 @@ function drawOptionsMenu()
 	Screen.clear()
 	
 	-- Background color tab	
-	Graphics.fillRect(20, 940, 50, 220, white)
-	Graphics.fillRect(21, 939, 51, 219, black)
-	Graphics.fillRect(40, 80, 140, 180, white)
-	Graphics.fillRect(41, 79, 141, 179, bg_color)
+	drawRect(20, 940, 50, 220, white)
+	drawRect(21, 939, 51, 219, black)
+	drawRect(40, 80, 140, 180, white)
+	drawRect(41, 79, 141, 179, bg_color)
 	if cursor > 0 and cursor < 4 then
-		Graphics.fillRect(99, 867, 104 + (cursor - 1) * 40, 126 + (cursor - 1) * 40, cyan)
+		drawRect(99, 867, 104 + (cursor - 1) * 40, 126 + (cursor - 1) * 40, cyan)
 	end
-	Graphics.fillRect(100, 101 + 3 * bg_r, 105, 125, red)
-	Graphics.fillRect(100, 101 + 3 * bg_g, 145, 165, green)
-	Graphics.fillRect(100, 101 + 3 * bg_b, 185, 205, blue)
+	drawRect(100, 101 + 3 * bg_r, 105, 125, red)
+	drawRect(100, 101 + 3 * bg_g, 145, 165, green)
+	drawRect(100, 101 + 3 * bg_b, 185, 205, blue)
 	Graphics.debugPrint(40, 65, "Background color", white)
 	
 	-- Non background color tab
-	Graphics.fillRect(20, 940, 240, 410, white)
-	Graphics.fillRect(21, 939, 241, 409, black)
-	Graphics.fillRect(40, 80, 330, 370, white)
-	Graphics.fillRect(41, 79, 331, 369, nbg_color)
+	drawRect(20, 940, 240, 410, white)
+	drawRect(21, 939, 241, 409, black)
+	drawRect(40, 80, 330, 370, white)
+	drawRect(41, 79, 331, 369, nbg_color)
 	if cursor > 3 and cursor < 7 then
-		Graphics.fillRect(99, 867, 294 + (cursor - 4) * 40, 316 + (cursor - 4) * 40, cyan)
+		drawRect(99, 867, 294 + (cursor - 4) * 40, 316 + (cursor - 4) * 40, cyan)
 	end
-	Graphics.fillRect(100, 101 + 3 * nbg_r, 295, 315, red)
-	Graphics.fillRect(100, 101 + 3 * nbg_g, 335, 355, green)
-	Graphics.fillRect(100, 101 + 3 * nbg_b, 375, 395, blue)
+	drawRect(100, 101 + 3 * nbg_r, 295, 315, red)
+	drawRect(100, 101 + 3 * nbg_g, 335, 355, green)
+	drawRect(100, 101 + 3 * nbg_b, 375, 395, blue)
 	Graphics.debugPrint(40, 255, "Sprites color", white)
 	
 	-- Menu entries
@@ -1067,13 +1077,14 @@ while true do
 		Screen.flip()
 		handleRomSelection()
 	elseif state == 1 then -- Game loop
+		handleKeys()
 		for i=0, 8 do
 			executeOpcode()
 		end
 		if updateScreen then
 			Graphics.initBlend()
 			drawScreen()
-			Graphics.fillRect(0, 960, 0, 32, black)
+			drawRect(0, 960, 0, 32, black)
 			if state_timer > 0 then
 				Graphics.debugPrint(0, 0, notification, yellow)
 				state_timer = state_timer - 1
@@ -1084,11 +1095,11 @@ while true do
 			Graphics.termBlend()
 			Screen.flip()
 		end
-		handleKeys()
+		handleTimers()
 	elseif state == 2 then -- Pause menu
 		Graphics.initBlend()
 		drawScreen()
-		Graphics.fillRect(0, 960, 0, 32, black)
+		drawRect(0, 960, 0, 32, black)
 		if state_timer > 0 then
 			Graphics.debugPrint(0, 0, notification, yellow)
 			state_timer = state_timer - 1
