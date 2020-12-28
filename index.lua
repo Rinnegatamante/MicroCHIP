@@ -666,7 +666,7 @@ end
 -- Load a savestate
 function loadSavestate()
 	if not System.doesFileExist(savFolder.."/"..cur_rom..".sav") then
-        return false
+        	return false
 	end
 	local fd = System.openFile(savFolder.."/"..cur_rom..".sav", FREAD)
 	PC_b1 = string.byte(System.readFile(fd,1))
@@ -758,7 +758,7 @@ function handlePauseKeys()
 			if loadSavestate() then 
 				pushNotification("Savestate loaded successfully!")
 			else
-			    pushNotification("Savestate does not exist")
+				pushNotification("Savestate does not exist")
 			end
 		elseif cursor == 4 then -- Reset game
 			loadRom(romFolder.."/"..roms[currentRomCursor])
