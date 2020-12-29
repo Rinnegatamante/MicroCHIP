@@ -68,11 +68,12 @@ local savFolder = emuFolder .. "/saves"
 local roms = {}
 local ver = "1.0"
 local cursor = 1
+local currentRomCursor = -1
 local oldpad = SCE_CTRL_CROSS
 local notification = ""
 local t = nil
 local old_t = nil
-local pause_menu_entries = {"Resume game", "Save savestate", "Load savestate", "Show/Hide Debugger", "Options", "Close rom"}
+local pause_menu_entries = {"Resume game", "Save savestate", "Load savestate", "Reset game", "Show/Hide Debugger", "Options", "Close rom"}
 local debugger = false
 
 -- CHIP-8 Fontset
@@ -212,7 +213,7 @@ function loadRom(filename)
 	end
 	System.closeFile(fd)
 	purgeScreen()
-	cur_rom = roms[cursor]
+	cur_rom = roms[currentRomCursor]
 	pushNotification("Rom " .. cur_rom .. " loaded successfully!")
 end
 
@@ -652,6 +653,7 @@ function handleRomSelection()
 		if System.doesFileExist(savFolder.."/"..roms[cursor]..".sav") then
 			loadState = showAnswer("A savestate has been detected. Do you want to load it?")	
 		end
+		currentRomCursor = cursor
 		loadRom(romFolder.."/"..roms[cursor])
 		if loadState then
 			loadSavestate()
@@ -663,6 +665,9 @@ end
 
 -- Load a savestate
 function loadSavestate()
+	if not System.doesFileExist(savFolder.."/"..cur_rom..".sav") then
+        	return false
+	end
 	local fd = System.openFile(savFolder.."/"..cur_rom..".sav", FREAD)
 	PC_b1 = string.byte(System.readFile(fd,1))
 	PC_b2 = string.byte(System.readFile(fd,1))
@@ -688,6 +693,7 @@ function loadSavestate()
 		ram[i] = string.byte(System.readFile(fd,1))
 	end
 	System.closeFile(fd)
+	return true
 end
 
 -- Save a savestate
@@ -749,24 +755,32 @@ function handlePauseKeys()
 			saveSavestate()
 			pushNotification("Savestate created successfully!")
 		elseif cursor == 3 then -- Load savestate
-			loadSavestate()
-			pushNotification("Savestate loaded successfully!")
-		elseif cursor == 4 then -- Show / Hide debugger
+			if loadSavestate() then 
+				pushNotification("Savestate loaded successfully!")
+			else
+				pushNotification("Savestate does not exist")
+			end
+		elseif cursor == 4 then -- Reset game
+			loadRom(romFolder.."/"..roms[currentRomCursor])
+			state = 1
+		elseif cursor == 5 then -- Show / Hide debugger
 			debugger = not debugger
 			if debugger then
 				pushNotification("Debugger enabled")
 			else
+				-- Clear screen to remove debugger stuff
+				purgeScreen()
 				pushNotification("Debugger disabled")
 			end
-		elseif cursor == 5 then -- Options
+		elseif cursor == 6 then -- Options
 			state = 3
 			cursor = 1
 			old_state = 2
 			old_bg_color = bg_color
 			old_nbg_color = nbg_color
-		elseif cursor == 6 then -- Close rom
+		elseif cursor == 7 then -- Close rom
 			state = 0
-			cursor = 1
+			cursor = currentRomCursor
 		end
 	end
 	oldpad = pad
@@ -774,8 +788,10 @@ end
 
 -- Draws pause menu
 function drawPauseMenu()
-	drawRect(300, 660, 150, 280, white)
-	drawRect(301, 659, 151, 279, black)
+	-- Calculate the space occupied by the entries based on their number
+	local menu_entries_height = #pause_menu_entries*22
+	drawRect(300, 660, 150, 150 + menu_entries_height, white)
+	drawRect(301, 659, 151, 149 + menu_entries_height, black)
 	for i=1, #pause_menu_entries do
 		if i == cursor then
 			Graphics.debugPrint(305, 155 + (i-1)*20, pause_menu_entries[i], cyan)
